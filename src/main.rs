@@ -5,7 +5,7 @@ mod decryption;
 use clap::{Parser, Subcommand, ValueEnum};
 use encryption::encrypt_file;
 use decryption::decrypt_file;
-use key_management::generate_key;
+use key_management::{generate_key, load_key_from_file, save_key_to_file};
 
 #[derive(Parser)]
 #[command(name = "encrust")]
@@ -58,20 +58,37 @@ fn main() {
 
     match &args.command {
         Commands::Encrypt { input_file, output_file, algorithm, key } => {
+            let key = if let Some(key_path) = key {
+                load_key_from_file(key_path).expect("Failed to load key")
+            } else {
+                let generated_key = generate_key();
+                // Save the generated key to a file for future use
+                let key_file_path = "generated_key.key"; // You can customize this path
+                save_key_to_file(&generated_key, key_file_path).expect("Failed to save generated key");
+                println!("Generated key saved to: {}", key_file_path);
+                generated_key.to_vec()
+            };
+
             println!("Encrypting file: {}", input_file);
             println!("Using algorithm: {:?}", algorithm);
+            println!("Using key: {:?}", key);
 
-            let key = key.as_deref().unwrap_or("");
             let output_file = output_file.as_deref().unwrap_or("");
 
             // Call the encrypt function here
             encrypt_file(&input_file, Some(output_file), key, *algorithm)
         }
         Commands::Decrypt { input_file, output_file, algorithm, key } => {
+            let key = if let Some(key_path) = key {
+                load_key_from_file(key_path).expect("Failed to load key")
+            } else {
+                panic!("A key is required for decryption");
+            };
+
             println!("Decrypting file: {}", input_file);
             println!("Using algorithm: {:?}", algorithm);
+            println!("Using key: {:?}", key);
 
-            let key = key.as_deref().unwrap_or("");
             let output_file = output_file.as_deref().unwrap_or("");
 
             // Call the decrypt function here
