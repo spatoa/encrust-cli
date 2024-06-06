@@ -1,11 +1,20 @@
-mod key_management;
 mod encryption;
 mod decryption;
 
+use std::fs::{File, read, write};
+use std::io::{self, ErrorKind, BufRead, BufReader, Read, Write};
+use std::process;
+
+use chacha20poly1305::Error;
 use clap::{Parser, Subcommand, ValueEnum};
 use encryption::encrypt_file;
 use decryption::decrypt_file;
-use key_management::{generate_key, load_key_from_file, save_key_to_file};
+
+const ERROR_FILE_NOT_FOUND: i32 = 1;
+const ERROR_PERMISSION_DENIED: i32 = 2;
+const ERROR_UNKNOWN: i32 = 3;
+const ERROR_CREATE_FILE_FAIL: i32 = 4;
+const ERROR_READ_FILE: i32 = 5;
 
 #[derive(Parser)]
 #[command(name = "encrust")]
@@ -20,11 +29,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Encrypt {
-        #[arg(value_name = "INPUT_FILE")]
-        input_file: String,
+        #[arg(value_name = "INPUT_FILE_PATH")]
+        input_file_path: String,
 
-        #[arg(value_name = "OUTPUT_FILE")]
-        output_file: Option<String>,
+        #[arg(value_name = "OUTPUT_FILE_PATH")]
+        output_file_path: Option<String>,
 
         #[arg(short, long, value_name = "ALGORITHM", value_enum, default_value_t = Algorithm::Aes)]
         algorithm: Algorithm,
@@ -33,11 +42,11 @@ enum Commands {
         key: Option<String>,
     },
     Decrypt {
-        #[arg(value_name = "INPUT_FILE")]
-        input_file: String,
+        #[arg(value_name = "INPUT_FILE_PATH")]
+        input_file_path: String,
 
-        #[arg(value_name = "OUTPUT_FILE")]
-        output_file: Option<String>,
+        #[arg(value_name = "OUTPUT_FILE_PATH")]
+        output_file_path: Option<String>,
 
         #[arg(short, long, value_name = "ALGORITHM", value_enum, default_value_t = Algorithm::Aes)]
         algorithm: Algorithm,
@@ -57,42 +66,77 @@ fn main() {
     let args = Cli::parse();
 
     match &args.command {
-        Commands::Encrypt { input_file, output_file, algorithm, key } => {
-            let key = if let Some(key_path) = key {
-                load_key_from_file(key_path).expect("Failed to load key")
-            } else {
-                let generated_key = generate_key();
-                // Save the generated key to a file for future use
-                let key_file_path = "generated_key.key"; // You can customize this path
-                save_key_to_file(&generated_key, key_file_path).expect("Failed to save generated key");
-                println!("Generated key saved to: {}", key_file_path);
-                generated_key.to_vec()
-            };
+        Commands::Encrypt { input_file_path, output_file_path, algorithm, key } => {
+            println!("\nEncrypting file: {}", input_file_path);
 
-            println!("Encrypting file: {}", input_file);
-            println!("Using algorithm: {:?}", algorithm);
-            println!("Using key: {:?}", key);
+            // File handling
+            let output_file_path = output_file_path.as_deref().unwrap_or("test_encrypt.txt");
 
-            let output_file = output_file.as_deref().unwrap_or("");
+            let input_file_contents = read_file(&input_file_path);
 
-            // Call the encrypt function here
-            encrypt_file(&input_file, Some(output_file), key, *algorithm)
+            let output_file = create_file(&output_file_path);
+
+            encrypt_file(input_file_contents, *algorithm, output_file_path);
         }
-        Commands::Decrypt { input_file, output_file, algorithm, key } => {
-            let key = if let Some(key_path) = key {
-                load_key_from_file(key_path).expect("Failed to load key")
-            } else {
-                panic!("A key is required for decryption");
-            };
+        Commands::Decrypt { input_file_path, output_file_path, algorithm, key } => {
+            println!("\nDecrypting file: {}", input_file_path);
 
-            println!("Decrypting file: {}", input_file);
-            println!("Using algorithm: {:?}", algorithm);
-            println!("Using key: {:?}", key);
+            // File handling
+            let output_file_path = output_file_path.as_deref().unwrap_or("test_decrypt.txt");
 
-            let output_file = output_file.as_deref().unwrap_or("");
+            let input_file_contents = read_file(&input_file_path);
 
-            // Call the decrypt function here
-            decrypt_file(&input_file, Some(output_file), key, *algorithm)
+            let output_file = create_file(&output_file_path);
+
+            decrypt_file(input_file_contents, *algorithm, output_file_path);
         }
     }
+}
+
+/// Opens a file based off of a given filename.
+fn open_file(filename: &str) -> File {
+    match File::open(filename) {
+        Ok(file) => file,
+        Err(e) => {
+            // Handle different kinds of errors separately
+            process::exit(match e.kind() {
+                ErrorKind::NotFound => {
+                    eprintln!("Error: File not found - {}", filename);
+                    ERROR_FILE_NOT_FOUND
+                }
+                ErrorKind::PermissionDenied => {
+                    eprintln!("Error: Permission denied - {}", filename);
+                    ERROR_PERMISSION_DENIED
+                }
+                _ => {
+                    eprintln!("Error: Failed to open file {}: {}", filename, e);
+                    ERROR_UNKNOWN
+                }
+            })
+        }
+    }
+}
+
+/// Creates a file with a given filename.
+fn create_file(filename: &str) -> File {
+    match File::create(filename) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Error: Failed to create file {}: {}", filename, e);
+            process::exit(ERROR_CREATE_FILE_FAIL);  // Exit the program with a non-zero exit code to indicate an error
+        }
+    }
+}
+
+/// Reads the contents of a file as raw bytes into a vector.
+fn read_file(filename: &str) -> Vec<u8> {
+    let mut file = open_file(filename);
+    let mut contents = Vec::new();
+
+    if let Err(e) = file.read_to_end(&mut contents) {
+        eprintln!("Error: Failed to read file {}: {}", filename, e);
+        process::exit(ERROR_READ_FILE);  // Read error
+    }
+
+    contents
 }
