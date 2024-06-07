@@ -19,7 +19,7 @@ const ERROR_READ_FILE: i32 = 5;
 #[derive(Parser)]
 #[command(name = "encrust")]
 #[command(author = "Lachlan  Burns (@spatoa)")]
-#[command(version = "1.0")]
+#[command(version = "0.1.0")]
 #[command(about = "Encrypts and decrypts files using various encryption algorithms")]
 struct Cli {
     #[command(subcommand)]
@@ -39,7 +39,7 @@ enum Commands {
         algorithm: Algorithm,
 
         #[arg(short, long, value_name = "KEY")]
-        key: Option<String>,
+        key_file_path: Option<String>,
     },
     Decrypt {
         #[arg(value_name = "INPUT_FILE_PATH")]
@@ -52,7 +52,7 @@ enum Commands {
         algorithm: Algorithm,
 
         #[arg(short, long, value_name = "KEY")]
-        key: Option<String>,
+        key_file_path: Option<String>,
     },
 }
 
@@ -66,7 +66,7 @@ fn main() {
     let args = Cli::parse();
 
     match &args.command {
-        Commands::Encrypt { input_file_path, output_file_path, algorithm, key } => {
+        Commands::Encrypt { input_file_path, output_file_path, algorithm, key_file_path } => {
             println!("\nEncrypting file: {}", input_file_path);
 
             // File handling
@@ -78,7 +78,7 @@ fn main() {
 
             encrypt_file(input_file_contents, *algorithm, output_file_path);
         }
-        Commands::Decrypt { input_file_path, output_file_path, algorithm, key } => {
+        Commands::Decrypt { input_file_path, output_file_path, algorithm, key_file_path } => {
             println!("\nDecrypting file: {}", input_file_path);
 
             // File handling
