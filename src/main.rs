@@ -18,8 +18,7 @@ const ERROR_WRITE_TO_FILE: i32 = 7;
 
 #[derive(Parser)]
 #[command(name = "encrust")]
-#[command(author = "Lachlan  Burns (@spatoa)")]
-#[command(version = "0.1.0")]
+#[command(version)]
 #[command(about = "Encrypts and decrypts files using various encryption algorithms")]
 struct Cli {
     #[command(subcommand)]
