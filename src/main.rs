@@ -1,20 +1,20 @@
-mod encryption;
 mod decryption;
+mod encryption;
 
-use std::fs::{File, read, write};
-use std::io::{self, ErrorKind, BufRead, BufReader, Read, Write};
+use std::fs::File;
+use std::io::{ErrorKind, Read, Write};
 use std::process;
 
-use chacha20poly1305::Error;
 use clap::{Parser, Subcommand, ValueEnum};
-use encryption::encrypt_file;
-use decryption::decrypt_file;
+use decryption::decrypt_ciphertext;
+use encryption::encrypt_plaintext;
 
 const ERROR_FILE_NOT_FOUND: i32 = 1;
 const ERROR_PERMISSION_DENIED: i32 = 2;
 const ERROR_UNKNOWN: i32 = 3;
 const ERROR_CREATE_FILE_FAIL: i32 = 4;
 const ERROR_READ_FILE: i32 = 5;
+const ERROR_WRITE_TO_FILE: i32 = 7;
 
 #[derive(Parser)]
 #[command(name = "encrust")]
@@ -66,29 +66,79 @@ fn main() {
     let args = Cli::parse();
 
     match &args.command {
-        Commands::Encrypt { input_file_path, output_file_path, algorithm, key_file_path } => {
+        Commands::Encrypt {
+            input_file_path,
+            output_file_path,
+            algorithm,
+            key_file_path,
+        } => {
             println!("\nEncrypting file: {}", input_file_path);
 
-            // File handling
-            let output_file_path = output_file_path.as_deref().unwrap_or("test_encrypt.txt");
+            // Create output file at user entered or default file path
+            let default_output_file_path = format!("{}_encrypted", input_file_path);
+            let output_file_path = output_file_path
+                .as_deref()
+                .unwrap_or_else(|| default_output_file_path.as_str());
+            let mut output_file = create_file(&output_file_path);
 
+            // Read and encrypt file
             let input_file_contents = read_file(&input_file_path);
+            let ciphertext = encrypt_plaintext(input_file_contents, *algorithm);
 
-            let output_file = create_file(&output_file_path);
+            // Write ciphertext to file
+            match output_file.write_all(&ciphertext) {
+                Ok(output_file) => output_file,
+                Err(e) => {
+                    eprintln!("Error: Failed to write to file {}: {}", output_file_path, e);
+                    process::exit(ERROR_WRITE_TO_FILE)
+                }
+            }
+            match output_file.flush() {
+                Ok(output_file) => output_file,
+                Err(e) => {
+                    eprintln!("Error: Failed to flush file {}: {}", output_file_path, e);
+                    process::exit(ERROR_UNKNOWN)
+                }
+            }
 
-            encrypt_file(input_file_contents, *algorithm, output_file_path);
+            process::exit(0)
         }
-        Commands::Decrypt { input_file_path, output_file_path, algorithm, key_file_path } => {
+        Commands::Decrypt {
+            input_file_path,
+            output_file_path,
+            algorithm,
+            key_file_path,
+        } => {
             println!("\nDecrypting file: {}", input_file_path);
 
-            // File handling
-            let output_file_path = output_file_path.as_deref().unwrap_or("test_decrypt.txt");
+            // Create output file at user entered or default file path
+            let default_output_file_path = format!("{}_decrypted", input_file_path);
+            let output_file_path = output_file_path
+                .as_deref()
+                .unwrap_or_else(|| default_output_file_path.as_str());
+            let mut output_file = create_file(&output_file_path);
 
+            // Read and decrypt file
             let input_file_contents = read_file(&input_file_path);
+            let plaintext = decrypt_ciphertext(input_file_contents, *algorithm);
 
-            let output_file = create_file(&output_file_path);
+            // Write ciphertext to file
+            match output_file.write_all(&plaintext) {
+                Ok(output_file) => output_file,
+                Err(e) => {
+                    eprintln!("Error: Failed to write to file {}: {}", output_file_path, e);
+                    process::exit(ERROR_WRITE_TO_FILE)
+                }
+            }
+            match output_file.flush() {
+                Ok(output_file) => output_file,
+                Err(e) => {
+                    eprintln!("Error: Failed to flush file {}: {}", output_file_path, e);
+                    process::exit(ERROR_UNKNOWN)
+                }
+            }
 
-            decrypt_file(input_file_contents, *algorithm, output_file_path);
+            process::exit(0)
         }
     }
 }
@@ -117,17 +167,6 @@ fn open_file(filename: &str) -> File {
     }
 }
 
-/// Creates a file with a given filename.
-fn create_file(filename: &str) -> File {
-    match File::create(filename) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Error: Failed to create file {}: {}", filename, e);
-            process::exit(ERROR_CREATE_FILE_FAIL);  // Exit the program with a non-zero exit code to indicate an error
-        }
-    }
-}
-
 /// Reads the contents of a file as raw bytes into a vector.
 fn read_file(filename: &str) -> Vec<u8> {
     let mut file = open_file(filename);
@@ -135,8 +174,19 @@ fn read_file(filename: &str) -> Vec<u8> {
 
     if let Err(e) = file.read_to_end(&mut contents) {
         eprintln!("Error: Failed to read file {}: {}", filename, e);
-        process::exit(ERROR_READ_FILE);  // Read error
+        process::exit(ERROR_READ_FILE); // Read error
     }
 
     contents
+}
+
+/// Creates a file with a given filename.
+fn create_file(filename: &str) -> File {
+    match File::create(filename) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Error: Failed to create file {}: {}", filename, e);
+            process::exit(ERROR_CREATE_FILE_FAIL); // Exit the program with a non-zero exit code to indicate an error
+        }
+    }
 }
